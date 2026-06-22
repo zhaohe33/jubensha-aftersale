@@ -218,6 +218,24 @@
       color: #f0d9a0;
     }
 
+    .btn-share {
+      width: 100%;
+      flex: none;
+      padding: 14px 16px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      background: linear-gradient(135deg, #2d5a3d, #1a3d28);
+      border-color: #6ab87a;
+      color: #b8e6c1;
+      letter-spacing: 0.12em;
+    }
+
+    .btn-share:hover {
+      background: linear-gradient(135deg, #3a7050, #245a38);
+      color: #d4f5dc;
+      border-color: #8ed4a0;
+    }
+
     .music-status {
       font-size: 0.75rem;
       color: var(--text-muted);
@@ -230,16 +248,11 @@
     }
 
     .share-box {
-      margin-top: 12px;
-      padding: 12px;
-      background: rgba(0, 0, 0, 0.3);
-      border: 1px solid var(--border);
+      margin-top: 16px;
+      padding: 14px;
+      background: rgba(45, 90, 61, 0.15);
+      border: 1px solid rgba(106, 184, 122, 0.35);
       border-radius: 6px;
-      display: none;
-    }
-
-    .share-box.visible {
-      display: block;
     }
 
     .share-box label {
@@ -304,38 +317,7 @@
       50% { opacity: 0.7; }
     }
 
-    /* ===== 分享按钮 & 弹窗 ===== */
-    .share-fab {
-      position: fixed;
-      top: 20px;
-      right: 400px;
-      z-index: 110;
-      padding: 12px 20px;
-      background: linear-gradient(135deg, var(--accent), #3d1a24);
-      border: 1px solid var(--gold);
-      color: var(--gold);
-      border-radius: 24px;
-      font-family: inherit;
-      font-size: 0.95rem;
-      cursor: pointer;
-      box-shadow: var(--shadow);
-      letter-spacing: 0.1em;
-      transition: transform 0.2s, right 0.35s ease;
-    }
-
-    .share-fab:hover {
-      transform: scale(1.05);
-    }
-
-    .editor.collapsed ~ .editor-toggle ~ .share-fab,
-    body.editor-collapsed .share-fab {
-      right: 20px;
-    }
-
-    body.view-mode .share-fab {
-      display: none;
-    }
-
+    /* ===== 分享弹窗 ===== */
     .share-modal {
       position: fixed;
       inset: 0;
@@ -680,12 +662,6 @@
       .content-card {
         padding: 32px 24px;
       }
-
-      .share-fab {
-        right: 20px;
-        top: auto;
-        bottom: 56px;
-      }
     }
   </style>
 </head>
@@ -749,24 +725,23 @@
 
       <div class="btn-row">
         <button class="btn btn-primary" id="applyBtn">应用预览</button>
-        <button class="btn btn-primary" id="shareBtn">生成分享链接</button>
+      </div>
+      <div class="btn-row" style="margin-top: 10px;">
+        <button class="btn btn-share" id="shareBtn" type="button">🔗 生成分享链接发给朋友</button>
       </div>
       <div class="btn-row" style="margin-top: 10px;">
         <button class="btn" id="saveBtn">保存到本地</button>
         <button class="btn" id="loadBtn">读取本地</button>
-        <button class="btn" id="copyShareBtn">复制链接</button>
       </div>
       <div class="share-box" id="shareBox">
-        <label>分享链接（打开即可看到相同内容并自动播放音乐）</label>
-        <input class="share-url" id="shareUrl" type="text" readonly />
-        <div class="share-hint" id="shareHint"></div>
+        <label>分享链接</label>
+        <input class="share-url" id="shareUrl" type="text" readonly placeholder="点击上方绿色按钮生成链接…" />
+        <div class="share-hint" id="shareHint">生成后链接会自动复制，发给朋友打开即可看到你的售后内容</div>
       </div>
     </div>
   </aside>
 
   <button class="editor-toggle" id="editorToggle" title="展开/收起编辑面板">编辑面板</button>
-
-  <button class="share-fab" id="shareFab" type="button">🔗 分享</button>
 
   <!-- 展示舞台 -->
   <div class="stage-bg" id="stageBg"></div>
@@ -790,6 +765,7 @@
   <script>
     const STORAGE_KEY = "jubensha-aftersale-v1";
     const MAX_URL_LENGTH = 7500;
+    const ONLINE_SHARE_URL = "https://zhaohe33.github.io/jubensha-aftersale/";
 
     const els = {
       editor: document.getElementById("editor"),
@@ -805,8 +781,6 @@
       musicStatus: document.getElementById("musicStatus"),
       applyBtn: document.getElementById("applyBtn"),
       shareBtn: document.getElementById("shareBtn"),
-      copyShareBtn: document.getElementById("copyShareBtn"),
-      shareFab: document.getElementById("shareFab"),
       shareModal: document.getElementById("shareModal"),
       shareUrlModal: document.getElementById("shareUrlModal"),
       copyShareModal: document.getElementById("copyShareModal"),
@@ -1016,6 +990,13 @@
     }
 
     function getShareBaseUrl() {
+      if (
+        location.protocol === "file:" ||
+        location.hostname === "localhost" ||
+        location.hostname === "127.0.0.1"
+      ) {
+        return ONLINE_SHARE_URL;
+      }
       const base = `${location.origin}${location.pathname}`;
       return base.endsWith("/") ? base : base + "/";
     }
@@ -1028,9 +1009,8 @@
       lastShareUrl = url;
       els.shareUrl.value = url;
       els.shareUrlModal.value = url;
-      els.shareBox.classList.add("visible");
-      els.shareHint.textContent = "链接已生成，可复制或扫码分享。";
-      els.shareModalHint.textContent = "将此链接发给玩家，打开后会自动展示内容并播放音乐。";
+      els.shareHint.textContent = "链接已生成！";
+      els.shareModalHint.textContent = "链接已复制到剪贴板，直接发给朋友即可。";
       els.qrImage.src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(url)}`;
       els.shareModal.classList.add("open");
       els.shareUrlModal.focus();
@@ -1042,6 +1022,7 @@
     }
 
     function generateShareLink() {
+      return (async () => {
       try {
         applyPreview(true);
 
@@ -1069,13 +1050,20 @@
           return "";
         }
 
-        history.replaceState(null, "", `?s=${encoded}`);
+        if (location.protocol !== "file:") {
+          history.replaceState(null, "", `?s=${encoded}`);
+        }
+
         openShareModal(url);
+        await copyText(url, els.shareHint);
+        els.shareHint.textContent = "✓ 链接已复制！发给朋友打开即可观看";
+        els.shareModalHint.textContent = "✓ 链接已复制！发给朋友打开即可观看";
         return url;
       } catch (err) {
         alert("生成分享链接失败：" + err.message);
         return "";
       }
+      })();
     }
 
     async function copyText(text, hintEl) {
@@ -1273,9 +1261,7 @@
 
     // ===== 事件绑定 =====
     els.applyBtn.addEventListener("click", () => applyPreview(true));
-    els.shareBtn.addEventListener("click", generateShareLink);
-    els.shareFab.addEventListener("click", generateShareLink);
-    els.copyShareBtn.addEventListener("click", copyShareLink);
+    els.shareBtn.addEventListener("click", () => generateShareLink());
     els.copyShareModal.addEventListener("click", copyShareLink);
     els.nativeShareBtn.addEventListener("click", nativeShare);
     els.closeShareModal.addEventListener("click", closeShareModal);
