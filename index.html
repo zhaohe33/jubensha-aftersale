@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>剧本杀售后 · 沉浸展示</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=ZCOOL+XiaoWei&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-dark: #0a0a0f;
+      --panel: rgba(18, 16, 24, 0.92);
+      --border: rgba(180, 150, 100, 0.25);
+      --gold: #c9a962;
+      --gold-dim: #8a7344;
+      --text: #e8e4dc;
+      --text-muted: #9a958a;
+      --accent: #6b2d3c;
+      --shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: "Noto Serif SC", "ZCOOL XiaoWei", serif;
+      background: var(--bg-dark);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ===== 编辑面板 ===== */
+    .editor {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 380px;
+      max-width: 100vw;
+      height: 100vh;
+      background: var(--panel);
+      border-left: 1px solid var(--border);
+      backdrop-filter: blur(12px);
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.35s ease;
+      box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4);
+    }
+
+    .editor.collapsed {
+      transform: translateX(100%);
+    }
+
+    .editor-toggle {
+      position: fixed;
+      top: 50%;
+      right: 380px;
+      transform: translateY(-50%);
+      z-index: 101;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-right: none;
+      color: var(--gold);
+      padding: 12px 8px;
+      cursor: pointer;
+      border-radius: 8px 0 0 8px;
+      font-size: 14px;
+      writing-mode: vertical-rl;
+      letter-spacing: 2px;
+      transition: right 0.35s ease;
+    }
+
+    .editor.collapsed + .editor-toggle {
+      right: 0;
+    }
+
+    .editor-header {
+      padding: 20px 24px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .editor-header h1 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: var(--gold);
+      letter-spacing: 0.15em;
+    }
+
+    .editor-header p {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 6px;
+    }
+
+    .editor-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 24px 24px;
+    }
+
+    .field {
+      margin-bottom: 20px;
+    }
+
+    .field label {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--gold-dim);
+      margin-bottom: 8px;
+      letter-spacing: 0.08em;
+    }
+
+    .field input[type="text"],
+    .field textarea {
+      width: 100%;
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 10px 12px;
+      font-family: inherit;
+      font-size: 0.9rem;
+      resize: vertical;
+      transition: border-color 0.2s;
+    }
+
+    .field input:focus,
+    .field textarea:focus {
+      outline: none;
+      border-color: var(--gold);
+    }
+
+    .field textarea {
+      min-height: 180px;
+      line-height: 1.7;
+    }
+
+    .upload-zone {
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .upload-zone:hover {
+      border-color: var(--gold);
+      background: rgba(201, 169, 98, 0.05);
+    }
+
+    .upload-zone input {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .upload-zone .hint {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .upload-preview {
+      margin-top: 10px;
+      max-height: 80px;
+      border-radius: 4px;
+      object-fit: cover;
+      width: 100%;
+      display: none;
+    }
+
+    .upload-preview.visible {
+      display: block;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      flex: 1;
+      min-width: 120px;
+      padding: 11px 16px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.85rem;
+      cursor: pointer;
+      letter-spacing: 0.05em;
+      transition: all 0.2s;
+    }
+
+    .btn:hover {
+      border-color: var(--gold);
+      color: var(--gold);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), #3d1a24);
+      border-color: var(--gold-dim);
+      color: var(--gold);
+    }
+
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #7a3545, #4a2230);
+      color: #f0d9a0;
+    }
+
+    .music-status {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 8px;
+      min-height: 1.2em;
+    }
+
+    .music-status.playing {
+      color: var(--gold);
+    }
+
+    /* ===== 展示区域 ===== */
+    .stage {
+      min-height: 100vh;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 60px 420px 60px 60px;
+      transition: padding 0.35s ease;
+    }
+
+    .editor.collapsed ~ .stage {
+      padding-right: 60px;
+    }
+
+    .stage-bg {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      background:
+        radial-gradient(ellipse at 30% 20%, rgba(107, 45, 60, 0.15), transparent 50%),
+        radial-gradient(ellipse at 70% 80%, rgba(201, 169, 98, 0.08), transparent 45%),
+        linear-gradient(180deg, #0d0b12 0%, #15121a 50%, #0a090e 100%);
+      background-size: cover;
+      background-position: center;
+      transition: background-image 0.6s ease;
+    }
+
+    .stage-bg::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: rgba(8, 6, 12, 0.55);
+      pointer-events: none;
+    }
+
+    .stage-bg.has-image::after {
+      background: rgba(8, 6, 12, 0.62);
+    }
+
+    .content-card {
+      position: relative;
+      z-index: 1;
+      max-width: 720px;
+      width: 100%;
+      background: rgba(12, 10, 18, 0.75);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 48px 52px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(8px);
+      animation: fadeUp 0.8s ease;
+    }
+
+    @keyframes fadeUp {
+      from {
+        opacity: 0;
+        transform: translateY(24px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .content-card::before,
+    .content-card::after {
+      content: "◆";
+      position: absolute;
+      color: var(--gold-dim);
+      font-size: 0.6rem;
+      opacity: 0.6;
+    }
+
+    .content-card::before {
+      top: 16px;
+      left: 20px;
+    }
+
+    .content-card::after {
+      bottom: 16px;
+      right: 20px;
+    }
+
+    .content-title {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--gold);
+      text-align: center;
+      margin-bottom: 8px;
+      letter-spacing: 0.2em;
+    }
+
+    .content-divider {
+      width: 60px;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--gold), transparent);
+      margin: 0 auto 32px;
+    }
+
+    .content-body {
+      font-size: 1.05rem;
+      line-height: 2;
+      color: var(--text);
+      white-space: pre-wrap;
+      word-break: break-word;
+      text-align: justify;
+    }
+
+    .content-body:empty::before {
+      content: "在此输入剧本杀售后内容，点击「应用预览」即可在此展示…";
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    /* ===== 启动遮罩 ===== */
+    .start-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      background: rgba(5, 4, 8, 0.92);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      transition: opacity 0.6s ease, visibility 0.6s;
+    }
+
+    .start-overlay.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .start-overlay h2 {
+      font-size: 1.4rem;
+      color: var(--gold);
+      letter-spacing: 0.3em;
+      font-weight: 400;
+    }
+
+    .start-overlay p {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      max-width: 360px;
+      text-align: center;
+      line-height: 1.6;
+    }
+
+    .start-btn {
+      padding: 14px 48px;
+      font-size: 1rem;
+      letter-spacing: 0.2em;
+      background: linear-gradient(135deg, var(--accent), #3d1a24);
+      border: 1px solid var(--gold-dim);
+      color: var(--gold);
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .start-btn:hover {
+      transform: scale(1.03);
+      box-shadow: 0 0 24px rgba(201, 169, 98, 0.2);
+    }
+
+    /* ===== 音乐控制 ===== */
+    .music-control {
+      position: fixed;
+      bottom: 24px;
+      left: 24px;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(12, 10, 18, 0.8);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 8px 16px 8px 10px;
+      backdrop-filter: blur(8px);
+      opacity: 0;
+      transition: opacity 0.4s;
+    }
+
+    .music-control.visible {
+      opacity: 1;
+    }
+
+    .music-control button {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--gold);
+      cursor: pointer;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+    }
+
+    .music-control button:hover {
+      background: rgba(201, 169, 98, 0.1);
+    }
+
+    .music-control span {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      letter-spacing: 0.05em;
+    }
+
+    #yt-player {
+      position: fixed;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    @media (max-width: 900px) {
+      .editor {
+        width: 100%;
+        height: auto;
+        max-height: 50vh;
+        border-left: none;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .editor-toggle {
+        top: auto;
+        bottom: 0;
+        right: 50%;
+        transform: translateX(50%);
+        writing-mode: horizontal-tb;
+        border-radius: 8px 8px 0 0;
+        border: 1px solid var(--border);
+        border-bottom: none;
+        padding: 8px 16px;
+      }
+
+      .editor.collapsed + .editor-toggle {
+        right: 50%;
+        bottom: 0;
+      }
+
+      .stage {
+        padding: 40px 20px;
+        padding-top: calc(50vh + 20px);
+      }
+
+      .editor.collapsed ~ .stage {
+        padding-top: 40px;
+      }
+
+      .content-card {
+        padding: 32px 24px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- 启动遮罩：浏览器要求用户交互后才能自动播放音乐 -->
+  <div class="start-overlay" id="startOverlay">
+    <h2>剧 本 杀 售 后</h2>
+    <p>点击进入沉浸体验。背景音乐将在您确认后开始播放。</p>
+    <button class="start-btn" id="startBtn">进入体验</button>
+  </div>
+
+  <!-- 编辑面板 -->
+  <aside class="editor" id="editor">
+    <div class="editor-header">
+      <h1>内容编辑</h1>
+      <p>配置文本、背景图与背景音乐</p>
+    </div>
+    <div class="editor-body">
+      <div class="field">
+        <label for="titleInput">标题</label>
+        <input type="text" id="titleInput" placeholder="例如：真相揭晓 · 售后说明" value="剧本杀售后" />
+      </div>
+
+      <div class="field">
+        <label for="contentInput">售后主体文本</label>
+        <textarea id="contentInput" placeholder="在此输入剧本杀售后说明、复盘、彩蛋等内容…"></textarea>
+      </div>
+
+      <div class="field">
+        <label>背景图片</label>
+        <div class="upload-zone" id="uploadZone">
+          <input type="file" id="bgInput" accept="image/*" />
+          <div class="hint">点击或拖拽上传背景图</div>
+          <img class="upload-preview" id="uploadPreview" alt="预览" />
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="youtubeInput">YouTube 背景音乐链接</label>
+        <input type="text" id="youtubeInput" placeholder="粘贴 YouTube 视频链接，如 https://youtu.be/xxxxx" />
+        <div class="music-status" id="musicStatus"></div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" id="applyBtn">应用预览</button>
+        <button class="btn" id="saveBtn">保存到本地</button>
+        <button class="btn" id="loadBtn">读取本地</button>
+      </div>
+    </div>
+  </aside>
+
+  <button class="editor-toggle" id="editorToggle" title="展开/收起编辑面板">编辑面板</button>
+
+  <!-- 展示舞台 -->
+  <div class="stage-bg" id="stageBg"></div>
+
+  <main class="stage">
+    <article class="content-card">
+      <h2 class="content-title" id="displayTitle">剧本杀售后</h2>
+      <div class="content-divider"></div>
+      <div class="content-body" id="displayContent"></div>
+    </article>
+  </main>
+
+  <!-- 音乐控制 -->
+  <div class="music-control" id="musicControl">
+    <button id="playPauseBtn" title="播放/暂停">▶</button>
+    <span id="musicLabel">背景音乐</span>
+  </div>
+
+  <div id="yt-player"></div>
+
+  <script>
+    const STORAGE_KEY = "jubensha-aftersale-v1";
+
+    const els = {
+      editor: document.getElementById("editor"),
+      editorToggle: document.getElementById("editorToggle"),
+      startOverlay: document.getElementById("startOverlay"),
+      startBtn: document.getElementById("startBtn"),
+      titleInput: document.getElementById("titleInput"),
+      contentInput: document.getElementById("contentInput"),
+      bgInput: document.getElementById("bgInput"),
+      uploadZone: document.getElementById("uploadZone"),
+      uploadPreview: document.getElementById("uploadPreview"),
+      youtubeInput: document.getElementById("youtubeInput"),
+      musicStatus: document.getElementById("musicStatus"),
+      applyBtn: document.getElementById("applyBtn"),
+      saveBtn: document.getElementById("saveBtn"),
+      loadBtn: document.getElementById("loadBtn"),
+      stageBg: document.getElementById("stageBg"),
+      displayTitle: document.getElementById("displayTitle"),
+      displayContent: document.getElementById("displayContent"),
+      musicControl: document.getElementById("musicControl"),
+      playPauseBtn: document.getElementById("playPauseBtn"),
+      musicLabel: document.getElementById("musicLabel"),
+    };
+
+    let bgImageData = "";
+    let ytPlayer = null;
+    let isPlaying = false;
+    let pendingAutoplay = false;
+    let currentVideoId = "";
+
+    // ===== YouTube API =====
+    function loadYouTubeAPI() {
+      if (window.YT) return Promise.resolve();
+      return new Promise((resolve) => {
+        const tag = document.createElement("script");
+        tag.src = "https://www.youtube.com/iframe_api";
+        const firstScript = document.getElementsByTagName("script")[0];
+        firstScript.parentNode.insertBefore(tag, firstScript);
+        window.onYouTubeIframeAPIReady = () => resolve();
+      });
+    }
+
+    function extractVideoId(url) {
+      if (!url) return "";
+      const patterns = [
+        /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
+        /^([a-zA-Z0-9_-]{11})$/,
+      ];
+      for (const p of patterns) {
+        const m = url.trim().match(p);
+        if (m) return m[1];
+      }
+      return "";
+    }
+
+    async function initPlayer(videoId) {
+      if (!videoId) {
+        destroyPlayer();
+        return;
+      }
+
+      await loadYouTubeAPI();
+
+      if (ytPlayer && currentVideoId === videoId) return;
+
+      destroyPlayer();
+      currentVideoId = videoId;
+
+      ytPlayer = new YT.Player("yt-player", {
+        height: "1",
+        width: "1",
+        videoId,
+        playerVars: {
+          autoplay: pendingAutoplay ? 1 : 0,
+          loop: 1,
+          playlist: videoId,
+          controls: 0,
+          disablekb: 1,
+          fs: 0,
+          modestbranding: 1,
+          rel: 0,
+        },
+        events: {
+          onReady: (e) => {
+            if (pendingAutoplay) {
+              e.target.playVideo();
+              pendingAutoplay = false;
+            }
+            updateMusicUI();
+          },
+          onStateChange: (e) => {
+            isPlaying = e.data === YT.PlayerState.PLAYING;
+            updateMusicUI();
+          },
+        },
+      });
+    }
+
+    function destroyPlayer() {
+      if (ytPlayer && ytPlayer.destroy) {
+        ytPlayer.destroy();
+      }
+      ytPlayer = null;
+      currentVideoId = "";
+      isPlaying = false;
+      updateMusicUI();
+    }
+
+    function updateMusicUI() {
+      const vid = extractVideoId(els.youtubeInput.value);
+      if (!vid) {
+        els.musicControl.classList.remove("visible");
+        els.musicStatus.textContent = "";
+        els.musicStatus.classList.remove("playing");
+        return;
+      }
+
+      els.musicControl.classList.add("visible");
+      els.playPauseBtn.textContent = isPlaying ? "⏸" : "▶";
+      els.musicStatus.textContent = isPlaying ? "♪ 正在播放背景音乐" : "已加载，点击播放";
+      els.musicStatus.classList.toggle("playing", isPlaying);
+    }
+
+    function togglePlay() {
+      if (!ytPlayer || !ytPlayer.playVideo) return;
+      if (isPlaying) {
+        ytPlayer.pauseVideo();
+      } else {
+        ytPlayer.playVideo();
+      }
+    }
+
+    // ===== 应用内容 =====
+    function applyPreview() {
+      els.displayTitle.textContent = els.titleInput.value.trim() || "剧本杀售后";
+      els.displayContent.textContent = els.contentInput.value;
+
+      if (bgImageData) {
+        els.stageBg.style.backgroundImage = `url(${bgImageData})`;
+        els.stageBg.classList.add("has-image");
+      } else {
+        els.stageBg.style.backgroundImage = "";
+        els.stageBg.classList.remove("has-image");
+      }
+
+      const videoId = extractVideoId(els.youtubeInput.value);
+      if (videoId) {
+        initPlayer(videoId);
+      } else {
+        destroyPlayer();
+        els.musicStatus.textContent = "未识别有效的 YouTube 链接";
+      }
+    }
+
+    // ===== 背景图上传 =====
+    function handleImageFile(file) {
+      if (!file || !file.type.startsWith("image/")) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        bgImageData = e.target.result;
+        els.uploadPreview.src = bgImageData;
+        els.uploadPreview.classList.add("visible");
+      };
+      reader.readAsDataURL(file);
+    }
+
+    els.bgInput.addEventListener("change", (e) => {
+      handleImageFile(e.target.files[0]);
+    });
+
+    els.uploadZone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      els.uploadZone.style.borderColor = "var(--gold)";
+    });
+
+    els.uploadZone.addEventListener("dragleave", () => {
+      els.uploadZone.style.borderColor = "";
+    });
+
+    els.uploadZone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      els.uploadZone.style.borderColor = "";
+      handleImageFile(e.dataTransfer.files[0]);
+    });
+
+    // ===== 本地存储 =====
+    function saveToLocal() {
+      const data = {
+        title: els.titleInput.value,
+        content: els.contentInput.value,
+        youtube: els.youtubeInput.value,
+        bgImage: bgImageData,
+      };
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        alert("已保存到浏览器本地存储");
+      } catch {
+        alert("保存失败：图片可能过大，请尝试压缩背景图");
+      }
+    }
+
+    function loadFromLocal() {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) {
+        alert("暂无已保存的内容");
+        return;
+      }
+      try {
+        const data = JSON.parse(raw);
+        els.titleInput.value = data.title || "";
+        els.contentInput.value = data.content || "";
+        els.youtubeInput.value = data.youtube || "";
+        bgImageData = data.bgImage || "";
+        if (bgImageData) {
+          els.uploadPreview.src = bgImageData;
+          els.uploadPreview.classList.add("visible");
+        }
+        applyPreview();
+      } catch {
+        alert("读取失败");
+      }
+    }
+
+    // ===== 事件绑定 =====
+    els.applyBtn.addEventListener("click", applyPreview);
+    els.saveBtn.addEventListener("click", saveToLocal);
+    els.loadBtn.addEventListener("click", loadFromLocal);
+    els.playPauseBtn.addEventListener("click", togglePlay);
+
+    els.editorToggle.addEventListener("click", () => {
+      els.editor.classList.toggle("collapsed");
+    });
+
+    els.startBtn.addEventListener("click", () => {
+      els.startOverlay.classList.add("hidden");
+      pendingAutoplay = true;
+      applyPreview();
+      if (ytPlayer && ytPlayer.playVideo) {
+        ytPlayer.playVideo();
+      }
+    });
+
+    // 实时预览文本（可选，轻量防抖）
+    let debounceTimer;
+    els.titleInput.addEventListener("input", () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        els.displayTitle.textContent = els.titleInput.value.trim() || "剧本杀售后";
+      }, 300);
+    });
+
+    els.contentInput.addEventListener("input", () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        els.displayContent.textContent = els.contentInput.value;
+      }, 300);
+    });
+  </script>
+</body>
+</html>
