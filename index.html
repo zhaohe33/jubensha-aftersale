@@ -236,6 +236,11 @@
       border-color: #8ed4a0;
     }
 
+    .btn-share:disabled {
+      opacity: 0.65;
+      cursor: wait;
+    }
+
     .music-status {
       font-size: 0.75rem;
       color: var(--text-muted);
@@ -1055,6 +1060,103 @@
       return `${getShareBaseUrl()}?s=${encoded}`;
     }
 
+    function getShareUrlLength(payload) {
+      return buildShareUrl(encodeShareData(payload)).length;
+    }
+
+    function compressImage(dataUrl, maxWidth, quality) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          let w = img.width;
+          let h = img.height;
+          if (w > maxWidth) {
+            h = Math.round((h * maxWidth) / w);
+            w = maxWidth;
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL("image/jpeg", quality));
+        };
+        img.onerror = () => reject(new Error("图片读取失败"));
+        img.src = dataUrl;
+      });
+    }
+
+    async function uploadImageToTelegraph(dataUrl) {
+      const blob = await (await fetch(dataUrl)).blob();
+      const formData = new FormData();
+      formData.append("file", blob, "background.jpg");
+      const res = await fetch("https://telegra.ph/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const json = await res.json();
+      if (Array.isArray(json) && json[0]?.src) {
+        return "https://telegra.ph" + json[0].src;
+      }
+      throw new Error("图片上传失败");
+    }
+
+    async function preparePayloadForShare(payload) {
+      if (!payload.i || payload.u) return { payload, note: "" };
+
+      if (getShareUrlLength(payload) <= MAX_URL_LENGTH) {
+        return { payload, note: "" };
+      }
+
+      const levels = [
+        [1280, 0.72],
+        [1024, 0.62],
+        [800, 0.52],
+        [640, 0.42],
+        [480, 0.35],
+        [360, 0.28],
+      ];
+
+      for (const [maxW, quality] of levels) {
+        const compressed = await compressImage(payload.i, maxW, quality);
+        const testPayload = { ...payload, i: compressed };
+        if (getShareUrlLength(testPayload) <= MAX_URL_LENGTH) {
+          return {
+            payload: testPayload,
+            note: "背景图已自动压缩以生成分享链接",
+          };
+        }
+      }
+
+      try {
+        const smallest = await compressImage(payload.i, 320, 0.25);
+        const imageUrl = await uploadImageToTelegraph(smallest);
+        const uploadedPayload = { ...payload };
+        delete uploadedPayload.i;
+        uploadedPayload.u = imageUrl;
+        if (getShareUrlLength(uploadedPayload) <= MAX_URL_LENGTH) {
+          return {
+            payload: uploadedPayload,
+            note: "背景图已自动上传并转为网络链接",
+          };
+        }
+      } catch {
+        /* 上传失败则继续降级 */
+      }
+
+      const withoutImage = { ...payload };
+      delete withoutImage.i;
+      return {
+        payload: withoutImage,
+        note: "背景图过大，已生成不含背景图的链接。建议填写「背景图网络链接」后重新生成。",
+      };
+    }
+
+    function setShareLoading(loading) {
+      els.shareBtn.disabled = loading;
+      els.shareBtn.textContent = loading ? "正在处理背景图…" : "🔗 生成分享链接发给朋友";
+    }
+
     function openShareModal(url) {
       lastShareUrl = url;
       els.shareUrl.value = url;
@@ -1076,27 +1178,26 @@
       try {
         applyPreview(true);
 
-        const payload = buildPayload();
+        let payload = buildPayload();
         if (!payload.c && !payload.t) {
           alert("请先填写标题或售后内容");
           return "";
         }
 
+        let shareNote = "";
         if (payload.i && !payload.u) {
-          const testUrl = buildShareUrl(encodeShareData(payload));
-          if (testUrl.length > MAX_URL_LENGTH) {
-            const useShort = confirm(
-              "背景图过大，链接无法分享。\n\n请填写「背景图网络链接」后重新生成。\n\n是否生成不含背景图的分享链接？"
-            );
-            if (!useShort) return "";
-            delete payload.i;
-          }
+          setShareLoading(true);
+          els.shareHint.textContent = "背景图较大，正在自动压缩…";
+          const prepared = await preparePayloadForShare(payload);
+          payload = prepared.payload;
+          shareNote = prepared.note;
+          setShareLoading(false);
         }
 
         const encoded = encodeShareData(payload);
         const url = buildShareUrl(encoded);
         if (url.length > MAX_URL_LENGTH) {
-          alert("链接过长无法分享，请缩短文本或使用背景图网络链接");
+          alert("内容仍然过长，请缩短文本后再试");
           return "";
         }
 
@@ -1106,10 +1207,14 @@
 
         openShareModal(url);
         await copyText(url, els.shareHint);
-        els.shareHint.textContent = "✓ 链接已复制！发给朋友打开即可观看";
-        els.shareModalHint.textContent = "✓ 链接已复制！发给朋友打开即可观看";
+        const msg = shareNote
+          ? `✓ 链接已复制！${shareNote}`
+          : "✓ 链接已复制！发给朋友打开即可观看";
+        els.shareHint.textContent = msg;
+        els.shareModalHint.textContent = msg;
         return url;
       } catch (err) {
+        setShareLoading(false);
         alert("生成分享链接失败：" + err.message);
         return "";
       }
