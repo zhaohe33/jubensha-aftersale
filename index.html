@@ -140,6 +140,35 @@
       line-height: 1.7;
     }
 
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+
+    .toggle-row input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--gold);
+    }
+
+    .toggle-row .toggle-title {
+      font-size: 0.85rem;
+      color: var(--text);
+      letter-spacing: 0.04em;
+    }
+
+    .toggle-row .toggle-desc {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+      line-height: 1.4;
+    }
+
     .upload-zone {
       border: 1px dashed var(--border);
       border-radius: 8px;
@@ -730,6 +759,17 @@
       </div>
 
       <div class="field">
+        <label>分享设置</label>
+        <div class="toggle-row">
+          <input type="checkbox" id="noHostMode" />
+          <div>
+            <div class="toggle-title">强制无图床模式</div>
+            <div class="toggle-desc">开启后不会自动上传图片到任何图床，只会把背景图极限压缩塞进链接（可能更糊/甚至放不下）。</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
         <label for="youtubeInput">YouTube 背景音乐链接</label>
         <input type="text" id="youtubeInput" placeholder="粘贴 YouTube 视频链接，如 https://youtu.be/xxxxx" />
         <div class="music-status" id="musicStatus"></div>
@@ -787,6 +827,7 @@
       contentInput: document.getElementById("contentInput"),
       bgInput: document.getElementById("bgInput"),
       bgUrlInput: document.getElementById("bgUrlInput"),
+      noHostMode: document.getElementById("noHostMode"),
       uploadZone: document.getElementById("uploadZone"),
       uploadPreview: document.getElementById("uploadPreview"),
       youtubeInput: document.getElementById("youtubeInput"),
@@ -822,6 +863,30 @@
     let autoplayRetryBound = false;
     let lastShareUrl = "";
     let playerReady = false;
+    let forceNoHost = false;
+
+    function loadShareSettings() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY + ":shareSettings");
+        if (!raw) return;
+        const obj = JSON.parse(raw);
+        forceNoHost = !!obj.forceNoHost;
+        if (els.noHostMode) els.noHostMode.checked = forceNoHost;
+      } catch {
+        /* ignore */
+      }
+    }
+
+    function saveShareSettings() {
+      try {
+        localStorage.setItem(
+          STORAGE_KEY + ":shareSettings",
+          JSON.stringify({ forceNoHost })
+        );
+      } catch {
+        /* ignore */
+      }
+    }
 
     function getYouTubeOrigin() {
       if (location.protocol === "file:" || !location.origin || location.origin === "null") {
@@ -1180,6 +1245,9 @@
       }
 
       const tryUpload = async (note) => {
+        if (forceNoHost) {
+          throw new Error("已开启强制无图床模式");
+        }
         const imageUrl = await uploadImageWithFallback(payload.i, onProgress);
         els.bgUrlInput.value = imageUrl;
         bgImageData = "";
@@ -1190,8 +1258,8 @@
         return { payload: uploadedPayload, note };
       };
 
-      // 大图优先上传图床，不塞进 URL
-      if (payload.i.length > 20000) {
+      // 大图优先上传图床，不塞进 URL（无图床模式除外）
+      if (!forceNoHost && payload.i.length > 20000) {
         try {
           return await tryUpload("背景图已自动上传到图床");
         } catch {
@@ -1247,7 +1315,10 @@
         return {
           payload: withoutImage,
           failed: true,
-          note: err.message || "背景图上传失败，已生成不含背景图的链接",
+          note:
+            forceNoHost
+              ? "无图床模式下背景图仍过大，已生成不含背景图的链接。建议填写「背景图网络链接」或换小图。"
+              : (err.message || "背景图上传失败，已生成不含背景图的链接"),
         };
       }
     }
@@ -1544,6 +1615,14 @@
       els.editor.classList.toggle("collapsed");
       document.body.classList.toggle("editor-collapsed", els.editor.classList.contains("collapsed"));
     });
+
+    if (els.noHostMode) {
+      loadShareSettings();
+      els.noHostMode.addEventListener("change", () => {
+        forceNoHost = !!els.noHostMode.checked;
+        saveShareSettings();
+      });
+    }
 
     els.bgUrlInput.addEventListener("input", () => {
       if (els.bgUrlInput.value.trim()) applyPreview(false);
