@@ -304,6 +304,120 @@
       50% { opacity: 0.7; }
     }
 
+    /* ===== 分享按钮 & 弹窗 ===== */
+    .share-fab {
+      position: fixed;
+      top: 20px;
+      right: 400px;
+      z-index: 110;
+      padding: 12px 20px;
+      background: linear-gradient(135deg, var(--accent), #3d1a24);
+      border: 1px solid var(--gold);
+      color: var(--gold);
+      border-radius: 24px;
+      font-family: inherit;
+      font-size: 0.95rem;
+      cursor: pointer;
+      box-shadow: var(--shadow);
+      letter-spacing: 0.1em;
+      transition: transform 0.2s, right 0.35s ease;
+    }
+
+    .share-fab:hover {
+      transform: scale(1.05);
+    }
+
+    .editor.collapsed ~ .editor-toggle ~ .share-fab,
+    body.editor-collapsed .share-fab {
+      right: 20px;
+    }
+
+    body.view-mode .share-fab {
+      display: none;
+    }
+
+    .share-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 300;
+      background: rgba(5, 4, 8, 0.85);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      backdrop-filter: blur(6px);
+    }
+
+    .share-modal.open {
+      display: flex;
+    }
+
+    .share-modal-content {
+      width: 100%;
+      max-width: 480px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 28px;
+      box-shadow: var(--shadow);
+    }
+
+    .share-modal-content h3 {
+      color: var(--gold);
+      font-size: 1.2rem;
+      text-align: center;
+      margin-bottom: 20px;
+      letter-spacing: 0.15em;
+    }
+
+    .share-modal-url {
+      width: 100%;
+      font-size: 0.8rem;
+      padding: 12px;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      word-break: break-all;
+      margin-bottom: 16px;
+      line-height: 1.5;
+    }
+
+    .share-modal-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+
+    .share-modal-actions .btn {
+      flex: 1;
+      min-width: 100px;
+    }
+
+    .qr-wrap {
+      text-align: center;
+      margin-bottom: 16px;
+    }
+
+    .qr-wrap img {
+      width: 180px;
+      height: 180px;
+      border: 4px solid #fff;
+      border-radius: 8px;
+    }
+
+    .qr-wrap p {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 8px;
+    }
+
+    .share-modal-close {
+      width: 100%;
+      margin-top: 8px;
+    }
+
     /* ===== 展示区域 ===== */
     .stage {
       min-height: 100vh;
@@ -566,12 +680,35 @@
       .content-card {
         padding: 32px 24px;
       }
+
+      .share-fab {
+        right: 20px;
+        top: auto;
+        bottom: 56px;
+      }
     }
   </style>
 </head>
 <body>
   <!-- 自动播放失败时的轻提示 -->
   <div class="autoplay-hint" id="autoplayHint">点击任意处播放背景音乐</div>
+
+  <div class="share-modal" id="shareModal">
+    <div class="share-modal-content">
+      <h3>分享链接</h3>
+      <textarea class="share-modal-url" id="shareUrlModal" rows="4" readonly></textarea>
+      <div class="share-modal-actions">
+        <button class="btn btn-primary" id="copyShareModal" type="button">复制链接</button>
+        <button class="btn btn-primary" id="nativeShareBtn" type="button">发送分享</button>
+      </div>
+      <div class="qr-wrap" id="qrWrap">
+        <img id="qrImage" alt="分享二维码" />
+        <p>微信扫码打开</p>
+      </div>
+      <p class="share-hint" id="shareModalHint">将此链接发给玩家，打开后会自动展示内容并播放音乐</p>
+      <button class="btn share-modal-close" id="closeShareModal" type="button">关闭</button>
+    </div>
+  </div>
 
   <!-- 编辑面板 -->
   <aside class="editor" id="editor">
@@ -629,6 +766,8 @@
 
   <button class="editor-toggle" id="editorToggle" title="展开/收起编辑面板">编辑面板</button>
 
+  <button class="share-fab" id="shareFab" type="button">🔗 分享</button>
+
   <!-- 展示舞台 -->
   <div class="stage-bg" id="stageBg"></div>
 
@@ -648,7 +787,6 @@
 
   <div id="yt-player"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
   <script>
     const STORAGE_KEY = "jubensha-aftersale-v1";
     const MAX_URL_LENGTH = 7500;
@@ -668,6 +806,14 @@
       applyBtn: document.getElementById("applyBtn"),
       shareBtn: document.getElementById("shareBtn"),
       copyShareBtn: document.getElementById("copyShareBtn"),
+      shareFab: document.getElementById("shareFab"),
+      shareModal: document.getElementById("shareModal"),
+      shareUrlModal: document.getElementById("shareUrlModal"),
+      copyShareModal: document.getElementById("copyShareModal"),
+      nativeShareBtn: document.getElementById("nativeShareBtn"),
+      closeShareModal: document.getElementById("closeShareModal"),
+      shareModalHint: document.getElementById("shareModalHint"),
+      qrImage: document.getElementById("qrImage"),
       shareBox: document.getElementById("shareBox"),
       shareUrl: document.getElementById("shareUrl"),
       shareHint: document.getElementById("shareHint"),
@@ -856,78 +1002,125 @@
     }
 
     function encodeShareData(payload) {
-      return LZString.compressToEncodedURIComponent(JSON.stringify(payload));
+      const json = JSON.stringify(payload);
+      return encodeURIComponent(btoa(unescape(encodeURIComponent(json))));
     }
 
     function decodeShareData(encoded) {
       try {
-        const json = LZString.decompressFromEncodedURIComponent(encoded);
-        if (!json) return null;
+        const json = decodeURIComponent(escape(atob(decodeURIComponent(encoded))));
         return JSON.parse(json);
       } catch {
         return null;
       }
     }
 
+    function getShareBaseUrl() {
+      const base = `${location.origin}${location.pathname}`;
+      return base.endsWith("/") ? base : base + "/";
+    }
+
+    function buildShareUrl(encoded) {
+      return `${getShareBaseUrl()}?s=${encoded}`;
+    }
+
+    function openShareModal(url) {
+      lastShareUrl = url;
+      els.shareUrl.value = url;
+      els.shareUrlModal.value = url;
+      els.shareBox.classList.add("visible");
+      els.shareHint.textContent = "链接已生成，可复制或扫码分享。";
+      els.shareModalHint.textContent = "将此链接发给玩家，打开后会自动展示内容并播放音乐。";
+      els.qrImage.src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(url)}`;
+      els.shareModal.classList.add("open");
+      els.shareUrlModal.focus();
+      els.shareUrlModal.select();
+    }
+
+    function closeShareModal() {
+      els.shareModal.classList.remove("open");
+    }
+
     function generateShareLink() {
-      applyPreview(true);
+      try {
+        applyPreview(true);
 
-      const payload = buildPayload();
-      if (!payload.c && !payload.t) {
-        alert("请先填写标题或售后内容");
-        return "";
-      }
+        const payload = buildPayload();
+        if (!payload.c && !payload.t) {
+          alert("请先填写标题或售后内容");
+          return "";
+        }
 
-      if (payload.i && !payload.u) {
-        const testEncoded = encodeShareData(payload);
-        const testUrl = `${location.origin}${location.pathname}#s=${testEncoded}`;
-        if (testUrl.length > MAX_URL_LENGTH) {
-          const withoutImage = { ...payload };
-          delete withoutImage.i;
-          const shortUrl = `${location.origin}${location.pathname}#s=${encodeShareData(withoutImage)}`;
-          if (shortUrl.length <= MAX_URL_LENGTH) {
+        if (payload.i && !payload.u) {
+          const testUrl = buildShareUrl(encodeShareData(payload));
+          if (testUrl.length > MAX_URL_LENGTH) {
             const useShort = confirm(
-              "背景图过大，链接可能无法分享。\n\n建议：填写「背景图网络链接」后重新生成。\n\n是否生成不含背景图的分享链接？"
+              "背景图过大，链接无法分享。\n\n请填写「背景图网络链接」后重新生成。\n\n是否生成不含背景图的分享链接？"
             );
             if (!useShort) return "";
             delete payload.i;
-          } else {
-            alert("内容过长，请缩短文本或使用背景图网络链接代替本地上传");
-            return "";
           }
         }
-      }
 
-      const encoded = encodeShareData(payload);
-      const url = `${location.origin}${location.pathname}#s=${encoded}`;
-      if (url.length > MAX_URL_LENGTH) {
-        alert("链接过长无法分享，请缩短文本或使用背景图网络链接");
+        const encoded = encodeShareData(payload);
+        const url = buildShareUrl(encoded);
+        if (url.length > MAX_URL_LENGTH) {
+          alert("链接过长无法分享，请缩短文本或使用背景图网络链接");
+          return "";
+        }
+
+        history.replaceState(null, "", `?s=${encoded}`);
+        openShareModal(url);
+        return url;
+      } catch (err) {
+        alert("生成分享链接失败：" + err.message);
         return "";
       }
+    }
 
-      lastShareUrl = url;
-      els.shareUrl.value = url;
-      els.shareBox.classList.add("visible");
-      els.shareHint.textContent = "将此链接发给玩家，打开后会自动展示内容并尝试播放背景音乐。";
-      history.replaceState(null, "", `#s=${encoded}`);
-      return url;
+    async function copyText(text, hintEl) {
+      if (!text) return false;
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      if (hintEl) hintEl.textContent = "已复制到剪贴板！";
+      return true;
     }
 
     async function copyShareLink() {
-      const url = lastShareUrl || els.shareUrl.value;
+      const url = lastShareUrl || els.shareUrl.value || els.shareUrlModal.value;
       if (!url) {
-        const generated = generateShareLink();
-        if (!generated) return;
+        generateShareLink();
+        return;
       }
-      const text = lastShareUrl || els.shareUrl.value;
-      try {
-        await navigator.clipboard.writeText(text);
-        els.shareHint.textContent = "已复制到剪贴板！";
-      } catch {
-        els.shareUrl.select();
-        document.execCommand("copy");
-        els.shareHint.textContent = "已复制到剪贴板！";
+      await copyText(url, els.shareHint);
+      els.shareModalHint.textContent = "已复制到剪贴板！";
+    }
+
+    async function nativeShare() {
+      const url = lastShareUrl || els.shareUrlModal.value;
+      if (!url) {
+        generateShareLink();
+        return;
       }
+      const title = els.titleInput.value.trim() || "剧本杀售后";
+      if (navigator.share) {
+        try {
+          await navigator.share({ title, text: title, url });
+          els.shareModalHint.textContent = "已唤起分享";
+          return;
+        } catch {
+          /* 用户取消 */
+        }
+      }
+      await copyText(url, els.shareModalHint);
     }
 
     function applyPayloadToUI(data) {
@@ -951,12 +1144,21 @@
       document.title = els.titleInput.value.trim() || "剧本杀售后";
     }
 
-    function loadFromHash() {
-      const hash = location.hash.slice(1);
-      if (!hash.startsWith("s=")) return false;
+    function loadFromShareParam() {
+      const params = new URLSearchParams(location.search);
+      let encoded = params.get("s");
 
-      const data = decodeShareData(hash.slice(2));
-      if (!data) return false;
+      if (!encoded && location.hash.startsWith("#s=")) {
+        encoded = location.hash.slice(3);
+      }
+
+      if (!encoded) return false;
+
+      const data = decodeShareData(encoded);
+      if (!data) {
+        alert("分享链接无效或已损坏，请重新生成");
+        return false;
+      }
 
       applyPayloadToUI(data);
       enterViewMode();
@@ -1072,13 +1274,21 @@
     // ===== 事件绑定 =====
     els.applyBtn.addEventListener("click", () => applyPreview(true));
     els.shareBtn.addEventListener("click", generateShareLink);
+    els.shareFab.addEventListener("click", generateShareLink);
     els.copyShareBtn.addEventListener("click", copyShareLink);
+    els.copyShareModal.addEventListener("click", copyShareLink);
+    els.nativeShareBtn.addEventListener("click", nativeShare);
+    els.closeShareModal.addEventListener("click", closeShareModal);
+    els.shareModal.addEventListener("click", (e) => {
+      if (e.target === els.shareModal) closeShareModal();
+    });
     els.saveBtn.addEventListener("click", saveToLocal);
     els.loadBtn.addEventListener("click", loadFromLocal);
     els.playPauseBtn.addEventListener("click", togglePlay);
 
     els.editorToggle.addEventListener("click", () => {
       els.editor.classList.toggle("collapsed");
+      document.body.classList.toggle("editor-collapsed", els.editor.classList.contains("collapsed"));
     });
 
     els.bgUrlInput.addEventListener("input", () => {
@@ -1102,7 +1312,7 @@
     });
 
     // 分享链接打开时自动加载并播放
-    if (loadFromHash()) {
+    if (loadFromShareParam()) {
       startMusicAutoplay();
     }
   </script>
