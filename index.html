@@ -1032,12 +1032,19 @@
 
     function encodeShareData(payload) {
       const json = JSON.stringify(payload);
-      return encodeURIComponent(btoa(unescape(encodeURIComponent(json))));
+      // Base64URL 比 encodeURIComponent(base64) 更短，能明显降低链接长度
+      return btoa(unescape(encodeURIComponent(json)))
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/g, "");
     }
 
     function decodeShareData(encoded) {
       try {
-        const json = decodeURIComponent(escape(atob(decodeURIComponent(encoded))));
+        const normalized = encoded.replace(/-/g, "+").replace(/_/g, "/");
+        const pad = normalized.length % 4;
+        const withPadding = normalized + (pad ? "=".repeat(4 - pad) : "");
+        const json = decodeURIComponent(escape(atob(withPadding)));
         return JSON.parse(json);
       } catch {
         return null;
@@ -1201,6 +1208,9 @@
         [360, 0.28],
         [280, 0.22],
         [200, 0.18],
+        [160, 0.14],
+        [120, 0.12],
+        [96, 0.1],
       ];
 
       if (onProgress) onProgress("正在压缩背景图…");
@@ -1213,6 +1223,20 @@
             note: "背景图已自动压缩",
           };
         }
+      }
+
+      // 先尝试极限缩略图塞进链接，失败再退化为上传
+      try {
+        const tiny = await compressImage(payload.i, 80, 0.08);
+        const tinyPayload = { ...payload, i: tiny };
+        if (getShareUrlLength(tinyPayload) <= MAX_URL_LENGTH) {
+          return {
+            payload: tinyPayload,
+            note: "背景图已极限压缩（缩略图）",
+          };
+        }
+      } catch {
+        /* ignore */
       }
 
       try {
