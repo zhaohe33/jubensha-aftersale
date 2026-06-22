@@ -820,10 +820,10 @@
       </div>
 
       <div class="btn-row">
-        <button class="btn btn-primary" id="applyBtn">应用预览</button>
+        <button class="btn btn-primary" id="applyBtn">① 预览当前内容</button>
       </div>
       <div class="btn-row" style="margin-top: 10px;">
-        <button class="btn btn-share" id="shareBtn" type="button">🔗 生成分享链接发给朋友</button>
+        <button class="btn btn-share" id="shareBtn" type="button">② 生成分享链接发给朋友</button>
       </div>
       <div class="btn-row" style="margin-top: 10px;">
         <button class="btn" id="saveBtn">保存到本地</button>
@@ -832,7 +832,7 @@
       <div class="share-box" id="shareBox">
         <label>分享链接</label>
         <input class="share-url" id="shareUrl" type="text" readonly placeholder="点击上方绿色按钮生成链接…" />
-        <div class="share-hint" id="shareHint">生成后链接会自动复制，发给朋友打开即可看到你的售后内容</div>
+        <div class="share-hint" id="shareHint">填写 GitHub Token 后可生成短链接（如 ?id=abc12345）</div>
       </div>
     </div>
   </aside>
@@ -866,6 +866,7 @@
     const GITHUB_REPO = "jubensha-aftersale";
     const GITHUB_BRANCH = "master";
     const GITHUB_IMAGE_DIR = "images";
+    const GITHUB_SHARES_DIR = "shares";
 
     const els = {
       editor: document.getElementById("editor"),
@@ -1270,6 +1271,71 @@
       return `${getShareBaseUrl()}?s=${encoded}`;
     }
 
+    function buildShortShareUrl(id) {
+      return `${getShareBaseUrl()}?id=${id}`;
+    }
+
+    function generateShortId() {
+      const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+      let id = "";
+      for (let i = 0; i < 8; i++) {
+        id += chars[Math.floor(Math.random() * chars.length)];
+      }
+      return id;
+    }
+
+    function getGithubToken() {
+      return els.githubToken?.value.trim() || "";
+    }
+
+    async function putFileToGitHub(path, contentText, message) {
+      const token = getGithubToken();
+      if (!token) throw new Error("请先填写 GitHub Token");
+
+      const content = btoa(unescape(encodeURIComponent(contentText)));
+      const res = await fetch(
+        `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github+json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            message,
+            content,
+            branch: GITHUB_BRANCH,
+          }),
+        }
+      );
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || "GitHub 保存失败");
+      }
+      return data;
+    }
+
+    async function uploadShareToGitHub(payload) {
+      const clean = { ...payload };
+      delete clean.i;
+
+      const id = generateShortId();
+      const path = `${GITHUB_SHARES_DIR}/${id}.json`;
+      const json = JSON.stringify(clean);
+
+      await putFileToGitHub(path, json, `Add share: ${id}`);
+      return id;
+    }
+
+    async function fetchShareById(id) {
+      const url = `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/${GITHUB_BRANCH}/${GITHUB_SHARES_DIR}/${id}.json`;
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) return null;
+      return await res.json();
+    }
+
     function getShareUrlLength(payload) {
       return buildShareUrl(encodeShareData(payload)).length;
     }
@@ -1516,10 +1582,34 @@
           }
         }
 
+        // 优先：短链接（内容存 GitHub，链接只带 id）
+        if (getGithubToken()) {
+          try {
+            setShareLoading(true, "正在生成短链接…");
+            const id = await uploadShareToGitHub(payload);
+            const url = buildShortShareUrl(id);
+            if (location.protocol !== "file:") {
+              history.replaceState(null, "", `?id=${id}`);
+            }
+            setShareLoading(false);
+            openShareModal(url);
+            await copyText(url, els.shareHint);
+            const msg = shareNote
+              ? `✓ 短链接已复制！${shareNote}`
+              : "✓ 短链接已复制！发给朋友打开即可观看";
+            els.shareHint.textContent = msg;
+            els.shareModalHint.textContent = msg;
+            return url;
+          } catch (err) {
+            setShareLoading(false);
+            els.shareHint.textContent = `短链接失败：${err.message}，尝试长链接…`;
+          }
+        }
+
         const encoded = encodeShareData(payload);
         const url = buildShareUrl(encoded);
         if (url.length > MAX_URL_LENGTH) {
-          alert("内容仍然过长，请缩短文本后再试");
+          alert("内容过长。请填写 GitHub Token 使用短链接，或先上传背景图到 GitHub。");
           return "";
         }
 
@@ -1609,8 +1699,22 @@
       document.title = els.titleInput.value.trim() || "剧本杀售后";
     }
 
-    function loadFromShareParam() {
+    async function loadFromShareParam() {
       const params = new URLSearchParams(location.search);
+      const shareId = params.get("id");
+
+      if (shareId && /^[a-z0-9]{6,12}$/i.test(shareId)) {
+        const data = await fetchShareById(shareId);
+        if (!data) {
+          alert("短链接内容不存在，可能刚生成还没同步，请稍等 10 秒后刷新");
+          return false;
+        }
+        applyPayloadToUI(data);
+        enterViewMode();
+        applyPreview(true);
+        return true;
+      }
+
       let encoded = params.get("s");
 
       if (!encoded && location.hash.startsWith("#s=")) {
@@ -1849,9 +1953,11 @@
     });
 
     // 分享链接打开时自动加载并播放
-    if (loadFromShareParam()) {
-      setTimeout(() => startMusicAutoplay(), 500);
-    }
+    (async () => {
+      if (await loadFromShareParam()) {
+        setTimeout(() => startMusicAutoplay(), 500);
+      }
+    })();
   </script>
 </body>
 </html>
