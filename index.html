@@ -169,6 +169,33 @@
       line-height: 1.4;
     }
 
+    .bg-upload-status {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 8px;
+      min-height: 1.2em;
+      line-height: 1.5;
+    }
+
+    .bg-upload-status.ok {
+      color: #8ed4a0;
+    }
+
+    .bg-upload-status.err {
+      color: #e8a0a0;
+    }
+
+    .field-hint {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      margin-top: 6px;
+      line-height: 1.5;
+    }
+
+    .field-hint a {
+      color: var(--gold-dim);
+    }
+
     .upload-zone {
       border: 1px dashed var(--border);
       border-radius: 8px;
@@ -748,14 +775,31 @@
         <label>背景图片</label>
         <div class="upload-zone" id="uploadZone">
           <input type="file" id="bgInput" accept="image/*" />
-          <div class="hint">点击或拖拽上传背景图</div>
+          <div class="hint">点击或拖拽上传，将自动同步到 GitHub images 文件夹</div>
           <img class="upload-preview" id="uploadPreview" alt="预览" />
         </div>
+        <div class="bg-upload-status" id="bgUploadStatus"></div>
       </div>
 
       <div class="field">
-        <label for="bgUrlInput">或：背景图网络链接（大图会自动上传图床）</label>
-        <input type="text" id="bgUrlInput" placeholder="图片 URL，生成分享链接时更稳定" />
+        <label for="bgUrlInput">背景图链接（上传成功后自动填入）</label>
+        <input type="text" id="bgUrlInput" placeholder="https://cdn.jsdelivr.net/gh/..." readonly />
+      </div>
+
+      <div class="field">
+        <label>GitHub 自动上传</label>
+        <input type="password" id="githubToken" placeholder="GitHub Token（仅保存在本机浏览器）" autocomplete="off" />
+        <div class="field-hint">
+          需要 Token 才能自动上传到本仓库 <code>images/</code> 文件夹。
+          <a href="https://github.com/settings/tokens/new?scopes=repo&description=jubensha-bg-upload" target="_blank" rel="noopener">创建 Token</a>
+        </div>
+        <div class="toggle-row" style="margin-top: 10px;">
+          <input type="checkbox" id="githubAutoUpload" checked />
+          <div>
+            <div class="toggle-title">上传图片时自动同步到 GitHub</div>
+            <div class="toggle-desc">仓库：zhaohe33/jubensha-aftersale · 分支：master · 目录：images/</div>
+          </div>
+        </div>
       </div>
 
       <div class="field">
@@ -818,6 +862,10 @@
     const STORAGE_KEY = "jubensha-aftersale-v1";
     const MAX_URL_LENGTH = 12000;
     const ONLINE_SHARE_URL = "https://zhaohe33.github.io/jubensha-aftersale/";
+    const GITHUB_OWNER = "zhaohe33";
+    const GITHUB_REPO = "jubensha-aftersale";
+    const GITHUB_BRANCH = "master";
+    const GITHUB_IMAGE_DIR = "images";
 
     const els = {
       editor: document.getElementById("editor"),
@@ -827,6 +875,9 @@
       contentInput: document.getElementById("contentInput"),
       bgInput: document.getElementById("bgInput"),
       bgUrlInput: document.getElementById("bgUrlInput"),
+      bgUploadStatus: document.getElementById("bgUploadStatus"),
+      githubToken: document.getElementById("githubToken"),
+      githubAutoUpload: document.getElementById("githubAutoUpload"),
       noHostMode: document.getElementById("noHostMode"),
       uploadZone: document.getElementById("uploadZone"),
       uploadPreview: document.getElementById("uploadPreview"),
@@ -864,6 +915,15 @@
     let lastShareUrl = "";
     let playerReady = false;
     let forceNoHost = false;
+    let githubAutoUploadEnabled = true;
+    let isUploadingBg = false;
+
+    function setBgUploadStatus(text, type) {
+      if (!els.bgUploadStatus) return;
+      els.bgUploadStatus.textContent = text || "";
+      els.bgUploadStatus.classList.remove("ok", "err");
+      if (type) els.bgUploadStatus.classList.add(type);
+    }
 
     function loadShareSettings() {
       try {
@@ -886,6 +946,84 @@
       } catch {
         /* ignore */
       }
+    }
+
+    function loadGithubSettings() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY + ":github");
+        if (!raw) return;
+        const obj = JSON.parse(raw);
+        if (els.githubToken && obj.token) els.githubToken.value = obj.token;
+        githubAutoUploadEnabled = obj.autoUpload !== false;
+        if (els.githubAutoUpload) els.githubAutoUpload.checked = githubAutoUploadEnabled;
+      } catch {
+        /* ignore */
+      }
+    }
+
+    function saveGithubSettings() {
+      try {
+        localStorage.setItem(
+          STORAGE_KEY + ":github",
+          JSON.stringify({
+            token: els.githubToken?.value || "",
+            autoUpload: githubAutoUploadEnabled,
+          })
+        );
+      } catch {
+        /* ignore */
+      }
+    }
+
+    function buildGithubImageUrl(fileName) {
+      return `https://cdn.jsdelivr.net/gh/${GITHUB_OWNER}/${GITHUB_REPO}@${GITHUB_BRANCH}/${GITHUB_IMAGE_DIR}/${fileName}`;
+    }
+
+    function buildGithubRawUrl(fileName) {
+      return `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/${GITHUB_BRANCH}/${GITHUB_IMAGE_DIR}/${fileName}`;
+    }
+
+    async function uploadImageToGitHub(dataUrl, originalName) {
+      const token = els.githubToken?.value.trim();
+      if (!token) {
+        throw new Error("请先填写 GitHub Token");
+      }
+
+      const safeBase = (originalName || "bg")
+        .replace(/\.[^.]+$/, "")
+        .replace(/[^a-zA-Z0-9_-]/g, "-")
+        .slice(0, 24) || "bg";
+      const fileName = `${safeBase}-${Date.now()}.jpg`;
+      const path = `${GITHUB_IMAGE_DIR}/${fileName}`;
+      const content = dataUrl.split(",")[1];
+
+      const res = await fetch(
+        `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github+json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            message: `Upload background image: ${fileName}`,
+            content,
+            branch: GITHUB_BRANCH,
+          }),
+        }
+      );
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || "GitHub 上传失败");
+      }
+
+      return {
+        cdnUrl: buildGithubImageUrl(fileName),
+        rawUrl: buildGithubRawUrl(fileName),
+        fileName,
+      };
     }
 
     function getYouTubeOrigin() {
@@ -1528,15 +1666,48 @@
     }
 
     // ===== 背景图上传 =====
-    function handleImageFile(file) {
+    async function handleImageFile(file) {
       if (!file || !file.type.startsWith("image/")) return;
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        bgImageData = e.target.result;
-        els.uploadPreview.src = bgImageData;
+      if (isUploadingBg) return;
+
+      isUploadingBg = true;
+      setBgUploadStatus("正在读取图片…");
+
+      try {
+        const reader = new FileReader();
+        const dataUrl = await new Promise((resolve, reject) => {
+          reader.onload = (e) => resolve(e.target.result);
+          reader.onerror = () => reject(new Error("图片读取失败"));
+          reader.readAsDataURL(file);
+        });
+
+        bgImageData = dataUrl;
+        els.uploadPreview.src = dataUrl;
         els.uploadPreview.classList.add("visible");
-      };
-      reader.readAsDataURL(file);
+        applyPreview(false);
+
+        const shouldUploadGithub =
+          githubAutoUploadEnabled && !!els.githubToken?.value.trim();
+
+        if (!shouldUploadGithub) {
+          setBgUploadStatus("已加载预览。填写 GitHub Token 后可自动上传到仓库。", "err");
+          return;
+        }
+
+        setBgUploadStatus("正在压缩并上传到 GitHub…");
+        const compressed = await compressImage(dataUrl, 1920, 0.85);
+        const result = await uploadImageToGitHub(compressed, file.name);
+
+        els.bgUrlInput.value = result.cdnUrl;
+        els.bgUrlInput.removeAttribute("readonly");
+        bgImageData = "";
+        setBgUploadStatus(`✓ 已上传到 GitHub：${result.fileName}`, "ok");
+        applyPreview(false);
+      } catch (err) {
+        setBgUploadStatus(err.message || "上传失败", "err");
+      } finally {
+        isUploadingBg = false;
+      }
     }
 
     els.bgInput.addEventListener("change", (e) => {
@@ -1623,6 +1794,22 @@
         saveShareSettings();
       });
     }
+
+    loadGithubSettings();
+    if (els.githubToken) {
+      els.githubToken.addEventListener("change", saveGithubSettings);
+      els.githubToken.addEventListener("blur", saveGithubSettings);
+    }
+    if (els.githubAutoUpload) {
+      els.githubAutoUpload.addEventListener("change", () => {
+        githubAutoUploadEnabled = !!els.githubAutoUpload.checked;
+        saveGithubSettings();
+      });
+    }
+
+    els.bgUrlInput.addEventListener("focus", () => {
+      els.bgUrlInput.removeAttribute("readonly");
+    });
 
     els.bgUrlInput.addEventListener("input", () => {
       if (els.bgUrlInput.value.trim()) applyPreview(false);
