@@ -617,11 +617,18 @@
 
     #yt-player {
       position: fixed;
-      width: 1px;
-      height: 1px;
-      opacity: 0;
+      left: -9999px;
+      top: 0;
+      width: 300px;
+      height: 200px;
+      opacity: 0.01;
       pointer-events: none;
       z-index: -1;
+    }
+
+    body.view-mode .music-control.visible {
+      opacity: 1;
+      z-index: 60;
     }
 
     @media (max-width: 900px) {
@@ -809,6 +816,14 @@
     let isViewMode = false;
     let autoplayRetryBound = false;
     let lastShareUrl = "";
+    let playerReady = false;
+
+    function getYouTubeOrigin() {
+      if (location.protocol === "file:" || !location.origin || location.origin === "null") {
+        return "https://zhaohe33.github.io";
+      }
+      return location.origin;
+    }
 
     // ===== YouTube API =====
     function loadYouTubeAPI() {
@@ -824,15 +839,27 @@
 
     function extractVideoId(url) {
       if (!url) return "";
+      const trimmed = url.trim();
       const patterns = [
-        /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
+        /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/,
+        /youtube\.com\/watch\?.*v=([a-zA-Z0-9_-]{11})/,
         /^([a-zA-Z0-9_-]{11})$/,
       ];
       for (const p of patterns) {
-        const m = url.trim().match(p);
+        const m = trimmed.match(p);
         if (m) return m[1];
       }
       return "";
+    }
+
+    function unmutePlayer(player) {
+      if (!player || !player.unMute) return;
+      try {
+        player.unMute();
+        player.setVolume(100);
+      } catch {
+        /* ignore */
+      }
     }
 
     async function initPlayer(videoId) {
@@ -843,23 +870,29 @@
 
       await loadYouTubeAPI();
 
-      if (ytPlayer && currentVideoId === videoId) {
+      if (ytPlayer && currentVideoId === videoId && playerReady) {
         if (pendingAutoplay && ytPlayer.playVideo) {
           ytPlayer.playVideo();
+          setTimeout(() => unmutePlayer(ytPlayer), 600);
           pendingAutoplay = false;
         }
+        updateMusicUI();
         return;
       }
 
       destroyPlayer();
       currentVideoId = videoId;
+      playerReady = false;
+
+      const shouldAutoplay = pendingAutoplay;
 
       ytPlayer = new YT.Player("yt-player", {
-        height: "1",
-        width: "1",
+        height: "200",
+        width: "300",
         videoId,
         playerVars: {
-          autoplay: pendingAutoplay ? 1 : 0,
+          autoplay: shouldAutoplay ? 1 : 0,
+          mute: shouldAutoplay ? 1 : 0,
           loop: 1,
           playlist: videoId,
           controls: 0,
@@ -867,19 +900,33 @@
           fs: 0,
           modestbranding: 1,
           rel: 0,
-          origin: location.origin,
+          playsinline: 1,
+          enablejsapi: 1,
+          origin: getYouTubeOrigin(),
         },
         events: {
           onReady: (e) => {
-            if (pendingAutoplay) {
+            playerReady = true;
+            if (shouldAutoplay) {
               e.target.playVideo();
+              setTimeout(() => {
+                unmutePlayer(e.target);
+                if (!isPlaying) showAutoplayHintIfNeeded();
+              }, 800);
               pendingAutoplay = false;
             }
             updateMusicUI();
           },
           onStateChange: (e) => {
             isPlaying = e.data === YT.PlayerState.PLAYING;
+            if (isPlaying) hideAutoplayHint();
             updateMusicUI();
+          },
+          onError: () => {
+            if (!isViewMode) {
+              els.musicStatus.textContent = "音乐加载失败，请检查 YouTube 链接或网络";
+            }
+            showAutoplayHintIfNeeded();
           },
         },
       });
@@ -891,6 +938,7 @@
       }
       ytPlayer = null;
       currentVideoId = "";
+      playerReady = false;
       isPlaying = false;
       updateMusicUI();
     }
@@ -922,16 +970,18 @@
 
     function startMusicAutoplay() {
       pendingAutoplay = true;
-      if (ytPlayer && ytPlayer.playVideo) {
+      const videoId = extractVideoId(els.youtubeInput.value);
+      if (!videoId) return;
+
+      if (ytPlayer && playerReady && ytPlayer.playVideo) {
         ytPlayer.playVideo();
+        setTimeout(() => unmutePlayer(ytPlayer), 600);
         pendingAutoplay = false;
         hideAutoplayHint();
         return;
       }
-      const videoId = extractVideoId(els.youtubeInput.value);
-      if (videoId) {
-        initPlayer(videoId);
-      }
+
+      initPlayer(videoId);
     }
 
     function hideAutoplayHint() {
@@ -963,9 +1013,9 @@
     function buildPayload() {
       const bgUrl = els.bgUrlInput.value.trim();
       const payload = {
+        y: els.youtubeInput.value.trim(),
         t: els.titleInput.value.trim() || "剧本杀售后",
         c: els.contentInput.value,
-        y: els.youtubeInput.value.trim(),
       };
       if (bgUrl) {
         payload.u = bgUrl;
@@ -1281,6 +1331,23 @@
       if (els.bgUrlInput.value.trim()) applyPreview(false);
     });
 
+    els.youtubeInput.addEventListener("input", () => {
+      const vid = extractVideoId(els.youtubeInput.value);
+      if (vid) updateMusicUI();
+    });
+
+    els.youtubeInput.addEventListener("change", () => {
+      if (extractVideoId(els.youtubeInput.value)) {
+        applyPreview(true);
+      }
+    });
+
+    els.youtubeInput.addEventListener("paste", () => {
+      setTimeout(() => {
+        if (extractVideoId(els.youtubeInput.value)) applyPreview(true);
+      }, 100);
+    });
+
     // 实时预览文本（可选，轻量防抖）
     let debounceTimer;
     els.titleInput.addEventListener("input", () => {
@@ -1299,7 +1366,7 @@
 
     // 分享链接打开时自动加载并播放
     if (loadFromShareParam()) {
-      startMusicAutoplay();
+      setTimeout(() => startMusicAutoplay(), 500);
     }
   </script>
 </body>
